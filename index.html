@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>บันทึกการใช้รถยนต์</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f4f4f4; }
+    .container { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+    input, select, textarea { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    button { width: 100%; background-color: #28a745; color: white; padding: 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold;}
+    button:hover { background-color: #218838; }
+    button:disabled { background-color: #6c757d; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>🚗 บันทึกการใช้รถยนต์</h2>
+    <form id="carForm" onsubmit="event.preventDefault(); submitData();">
+      <label>วันที่</label>
+      <input type="date" id="date" required>
+      
+      <label>ทะเบียนรถ</label>
+      <input type="text" id="plate" required>
+      
+      <label>ชื่อผู้ขับ</label>
+      <input type="text" id="driver" required>
+      
+      <label>เลขไมล์เริ่มต้น</label>
+      <input type="number" id="startMile" required>
+      
+      <label>เลขไมล์สิ้นสุด</label>
+      <input type="number" id="endMile" required>
+      
+      <label>สถานที่ / วัตถุประสงค์</label>
+      <input type="text" id="purpose" required>
+      
+      <label>ค่าน้ำมัน (บาท)</label>
+      <input type="number" id="fuel" value="0">
+      
+      <label>ค่าทางด่วน (บาท)</label>
+      <input type="number" id="toll" value="0">
+      
+      <label>หมายเหตุ</label>
+      <textarea id="note"></textarea>
+      
+      <button type="submit" id="submitBtn">💾 บันทึกข้อมูล</button>
+    </form>
+  </div>
+
+  <script>
+    // 1. ใส่ URL ของ Web App จาก Google Apps Script ตรงนี้
+    const GOOGLE_APP_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzis0jrDwXuHTOAWu0UVhjUrb814psHfmkxG_V9_-rTA86qrv8xwEwuyU8mvqak0LG7EQ/exec';
+
+    // เซ็ตวันที่ปัจจุบันเป็นค่าเริ่มต้น
+    document.getElementById('date').valueAsDate = new Date();
+
+    async function submitData() {
+      const btn = document.getElementById('submitBtn');
+      const startMile = parseFloat(document.getElementById('startMile').value);
+      const endMile = parseFloat(document.getElementById('endMile').value);
+
+      if(endMile < startMile) {
+        alert("เลขไมล์สิ้นสุดต้องมากกว่าหรือเท่ากับเลขไมล์เริ่มต้นครับ");
+        return;
+      }
+
+      var data = {
+        date: document.getElementById('date').value,
+        plate: document.getElementById('plate').value,
+        driver: document.getElementById('driver').value,
+        startMile: startMile,
+        endMile: endMile,
+        purpose: document.getElementById('purpose').value,
+        fuel: parseFloat(document.getElementById('fuel').value) || 0,
+        toll: parseFloat(document.getElementById('toll').value) || 0,
+        note: document.getElementById('note').value
+      };
+
+      // เปลี่ยนปุ่มเป็นสถานะกำลังโหลด
+      btn.disabled = true;
+      btn.innerText = "กำลังบันทึกข้อมูล...";
+
+      try {
+        const response = await fetch(GOOGLE_APP_SCRIPT_URL, {
+          method: 'POST',
+          // การส่งไป Google Apps Script จำเป็นต้องตั้ง redirect: 'follow' และส่ง Content-Type เป็น text/plain เพื่อเลี่ยงการติด CORS
+          redirect: 'follow', 
+          headers: {
+            "Content-Type": "text/plain;charset=utf-8",
+          },
+          body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+        
+        if(result.status === 'success') {
+          alert(result.message);
+          document.getElementById('carForm').reset();
+          document.getElementById('date').valueAsDate = new Date();
+        } else {
+          alert("เกิดข้อผิดพลาด: " + result.message);
+        }
+      } catch (error) {
+        alert("การเชื่อมต่อล้มเหลว ตรวจสอบอินเทอร์เน็ตหรือ URL ของ API: " + error);
+      } finally {
+        // คืนค่าปุ่มกลับเป็นเหมือนเดิม
+        btn.disabled = false;
+        btn.innerText = "💾 บันทึกข้อมูล";
+      }
+    }
+  </script>
+</body>
+</html>
