@@ -5,12 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>บันทึกการใช้รถยนต์</title>
   <style>
-    body { font-family: sans-serif; padding: 20px; background: #f4f4f4; }
-    .container { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+    body { font-family: sans-serif; padding: 20px; background: #f4f4f4; margin: 0; }
+    .container { max-width: 500px; margin: 20px auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); box-sizing: border-box; }
     input, select, textarea { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
     button { width: 100%; background-color: #28a745; color: white; padding: 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold;}
     button:hover { background-color: #218838; }
     button:disabled { background-color: #6c757d; cursor: not-allowed; }
+    .preview-container { display: none; text-align: center; margin: 10px 0; padding: 5px; border: 1px dashed #ccc; background: #fafafa; }
+    .preview-container img { max-width: 100%; max-height: 200px; border-radius: 4px; }
   </style>
 </head>
 <body>
@@ -21,7 +23,7 @@
       <input type="date" id="date" required>
       
       <label>ทะเบียนรถ</label>
-      <input type="text" id="plate" required>
+      <input type="text" id="plate" placeholder="เช่น กข 1234 กรุงเทพ" required>
       
       <label>ชื่อผู้ขับ</label>
       <input type="text" id="driver" required>
@@ -41,6 +43,13 @@
       <label>ค่าทางด่วน (บาท)</label>
       <input type="number" id="toll" value="0">
       
+      <label>📷 ถ่ายรูปภาพเข็มไมล์</label>
+      <input type="file" id="mileImage" accept="image/*">
+      <div class="preview-container" id="previewContainer">
+        <p style="margin:0 0 5px 0; font-size:12px; color:#666;">ตัวอย่างรูปภาพ:</p>
+        <img id="imagePreview" src="">
+      </div>
+      
       <label>หมายเหตุ</label>
       <textarea id="note"></textarea>
       
@@ -49,11 +58,42 @@
   </div>
 
   <script>
-    // 1. ใส่ URL ของ Web App จาก Google Apps Script ตรงนี้
+    // 1. นำ URL ของ Web App จาก Google Apps Script มาวางตรงนี้
     const GOOGLE_APP_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzis0jrDwXuHTOAWu0UVhjUrb814psHfmkxG_V9_-rTA86qrv8xwEwuyU8mvqak0LG7EQ/exec';
 
     // เซ็ตวันที่ปัจจุบันเป็นค่าเริ่มต้น
     document.getElementById('date').valueAsDate = new Date();
+
+    // ระบบแสดงตัวอย่างรูปภาพเมื่อเลือกไฟล์ (หรือถ่ายรูปจากมือถือ)
+    document.getElementById('mileImage').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(event) {
+          document.getElementById('imagePreview').src = event.target.result;
+          document.getElementById('previewContainer').style.display = 'block';
+        }
+        reader.readAsDataURL(file);
+      } else {
+        document.getElementById('previewContainer').style.display = 'none';
+      }
+    });
+
+    // ฟังก์ชันแปลงไฟล์รูปภาพให้เป็น Base64
+    function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => {
+          const base64String = reader.result.split(',')[1]; // ตัดส่วน header ออก เอาเฉพาะตัวรหัสข้อมูล
+          resolve({
+            base64: base64String,
+            mimeType: file.type
+          });
+        };
+        reader.onerror = error => reject(error);
+      });
+    }
 
     async function submitData() {
       const btn = document.getElementById('submitBtn');
@@ -65,26 +105,35 @@
         return;
       }
 
-      var data = {
-        date: document.getElementById('date').value,
-        plate: document.getElementById('plate').value,
-        driver: document.getElementById('driver').value,
-        startMile: startMile,
-        endMile: endMile,
-        purpose: document.getElementById('purpose').value,
-        fuel: parseFloat(document.getElementById('fuel').value) || 0,
-        toll: parseFloat(document.getElementById('toll').value) || 0,
-        note: document.getElementById('note').value
-      };
-
-      // เปลี่ยนปุ่มเป็นสถานะกำลังโหลด
+      // เปลี่ยนปุ่มเป็นสถานะกำลังโหลดป้องกันการกดซ้ำ
       btn.disabled = true;
-      btn.innerText = "กำลังบันทึกข้อมูล...";
+      btn.innerText = "กำลังอัปโหลดรูปภาพและบันทึกข้อมูล...";
 
       try {
+        // จัดการเรื่องรูปภาพ
+        const fileInput = document.getElementById('mileImage');
+        let imageData = null;
+        if (fileInput.files.length > 0) {
+          imageData = await fileToBase64(fileInput.files[0]);
+        }
+
+        // เตรียมชุดข้อมูลเพื่อส่งไปหลังบ้าน
+        var data = {
+          date: document.getElementById('date').value,
+          plate: document.getElementById('plate').value,
+          driver: document.getElementById('driver').value,
+          startMile: startMile,
+          endMile: endMile,
+          purpose: document.getElementById('purpose').value,
+          fuel: parseFloat(document.getElementById('fuel').value) || 0,
+          toll: parseFloat(document.getElementById('toll').value) || 0,
+          note: document.getElementById('note').value,
+          image: imageData // ส่งก้อนข้อมูลรูปภาพไปด้วย (ถ้ามี)
+        };
+
+        // ส่งข้อมูลแบบ POST ข้ามไปที่ Google Apps Script
         const response = await fetch(GOOGLE_APP_SCRIPT_URL, {
           method: 'POST',
-          // การส่งไป Google Apps Script จำเป็นต้องตั้ง redirect: 'follow' และส่ง Content-Type เป็น text/plain เพื่อเลี่ยงการติด CORS
           redirect: 'follow', 
           headers: {
             "Content-Type": "text/plain;charset=utf-8",
@@ -98,6 +147,7 @@
           alert(result.message);
           document.getElementById('carForm').reset();
           document.getElementById('date').valueAsDate = new Date();
+          document.getElementById('previewContainer').style.display = 'none'; // ซ่อนพรีวิวหลังส่งสำเร็จ
         } else {
           alert("เกิดข้อผิดพลาด: " + result.message);
         }
